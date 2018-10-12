@@ -29,8 +29,10 @@ colnames(data)[ncol(data)] <- c("Residuals")
 result$logLik
 # result$data # data you gave model
 beta_list <- result$coefficients$fixed # gives (- beta) by species as a fixed effect
+beta_list <- -1*(beta_list[-1])
 logalpha_list <- as.list(result$coefficients$random) # gives log alpha by species
 logalpha_list <- c(logalpha_list[[1]])
+alpha_list <- exp(logalpha_list)
 
 ##### Calculate recruitment deviations #####
 RecDevs <- data$Residuals
@@ -42,66 +44,59 @@ for(isp in 1:length(unique(data[,"SpeciesID"]))){
   abline(h=0)
   
   # Check rec devs normally distributed
-  qqnorm(RecDevs[which(names(RecDevs)==isp)], main=paste("Normal Q-Q Plot Species", isp, sep=" "))
+  qqnorm(RecDevs[which(names(RecDevs)==isp)], main=paste("Normal Q-Q Plot Rec Devs Species", isp, sep=" "))
   qqline(RecDevs[which(names(RecDevs)==isp)])
-    # Rec devs appear normally distributed for most species. 
-    # Species 5 has isn't quite normally distributed but this is expected due to small sample size.
 }
+
+print("Rec devs generally appears normally distributed. Species 5 has a small sample size so the rec devs are not as obviously normally distributedand in some instances small and large values do not exactly follow a normal distribution (e.g. species 8).")
 
 # Summarize residual plots
 plot(result,form=resid(.,type="p")~fitted(.)|SpeciesID,abline=0,pch=16)
 
 # Boxplot residuals by species
-boxplot(split(residuals(result),data$SpeciesID),ylab="Residual",xlab="Species",csi=0.2)
+boxplot(split(residuals(result),data$SpeciesID),ylab="Residual",xlab="Species",csi=0.2, main = "Recruitment Deviations by Species")
+print("Rec devs are fairly well centered around zero. However, variability changes between species (species 3-6 have lower variability), which violates our modeling assumption of equal variance across all species. Accounting for species-specific variability may improve model fit.")
+qqnorm(residuals(result), main=paste("Normal Q-Q Plot All Rec Devs"))
+qqline(residuals(result))
 
-# qq plot for random effects
-## plot fixed effects and species differ from eachother (not equal between species)
-# plot f ixed effects
+# QQ plot for random effects (log alpha)
+qqnorm(logalpha_list, main="Normal Q-Q Plot log alpha")
+qqline(logalpha_list)
+print("We assumed logalpha was normally distributed. Estimated values for logalpha generally follow a normal distribution, but several values do not. Given a larger sample size I expect these points would appear closer to the normal distribution.")
 
-# what does augPred() do?
-# is the below appropriate given what andre said yesterday about accounting for the random effects structrure?
-# also plot random effects? see slide 21 how do I find random effect values? what does coef(result) give me
+# QQ plot for fixed effects (beta)
+qqnorm(beta_list, main = "Normal Q-Q Plot beta")
+qqline(beta_list)
+print("Similarly to estimated values of log alpha, estimated beta values appear roughly normally distibuted but there are several points which deviate from this distribution.")
 
-predict(model, newdata=range of values to predict at)
 
-##### The below is not the right  way to do these projections ######
-##### Use estimated alphas and betas to predict recruitment #####
-alpha_list <- exp(logalpha_list)
-beta_list <- -1*beta_list
+# Predicted Recruitment
+newdata <- NULL
+for(isp in 1:11){
+  tempnewdata <- seq(min(data[which(data[,"SpeciesID"]==isp),"SSB"]), max(data[which(data[,"SpeciesID"]==isp),"SSB"]),0.1)
+  newdataR <- cbind(tempnewdata, rep(isp, length(tempnewdata)), rep(unique(data[,"SBPR"])[isp], length(tempnewdata)))
+  colnames(newdataR) <- c("SSB", "SpeciesID","SBPR")
+  newdataR <- as.data.frame(newdataR)
+  newdata <- rbind(newdata, newdataR)
+}
+newdata$SpeciesID <- as.factor(newdata$SpeciesID) # species must be a factor in order for predict to work
 
-data <- cbind(data,rep(NA,nrow(data)))
-colnames(data)[ncol(data)] <- "R_pred"
+newdata <- cbind(newdata, predict(result,newdata=newdata))
+colnames(newdata)[ncol(newdata)] <- "Predictions"
 
-for(irow in 1:nrow(data)){
-  sp <- as.numeric(data[irow,"SpeciesID"])
-  R_pred <- alpha_list[sp]*data[irow,"SSB"]*exp(-1*beta_list[sp]*data[irow,"SSB"])/data[irow,"SBPR"]
-  data[irow,"R_pred"] <- R_pred
+temp <- newdata[,"Predictions"] + log(newdata[,"SSB"]) - log(newdata[,"SBPR"]) # calculate predicted recruitment given model structure
+temp <- exp(temp)
+newdata <- cbind(newdata, temp)
+colnames(newdata)[ncol(newdata)] <- "R_pred"
+
+for(isp in 1:11){
+  plot(newdata[which(newdata[,"SpeciesID"]==isp),"SSB"], newdata[which(newdata[,"SpeciesID"]==isp),"R_pred"],
+       main=paste("Species",isp, sep=" "), ylab="Predicted Recruitment", xlab="SSB", type="l")
 }
 
-# Plot R & predicted R by species
-for(isp in 1:length(unique(data[,"SpeciesID"]))){
-  plot(y =data[which(data[,"SpeciesID"]==isp),"Recruitment"], x=data[which(data[,"SpeciesID"]==isp),"SSB"],  col="red", main=paste("Species",isp, sep=" "), ylab="Recruitment", xlab="SSB")
-  lines(y=data[which(data[,"SpeciesID"]==isp),"R_pred"], x=data[which(data[,"SpeciesID"]==isp),"SSB"], col="black")
-  legend("topright", legend=c("Observed R", "Predicted R"), fill=c("red", "black"))
-}
+
+plot(newdata$SSB,newdata$R_pred, col=newdata$SpeciesID)
+legend("bottomright", legend=levels(newdata$SpeciesID), fill=unique(newdata$SpeciesID))
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-##### TO DO #####
-# plot residuals (of all data)
-# look at documentation and see what residuals are for
 
