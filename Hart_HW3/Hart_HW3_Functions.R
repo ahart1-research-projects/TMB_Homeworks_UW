@@ -155,13 +155,24 @@ CalcRecruit <- function(FishingMortality = 0,
     # Recruit <- 0.8*SBPRzero*Rzero*(log(SBPR) - log(SBPRzero) + log(Steepness/0.2)/0.8)/(log(Steepness/0.2)*SBPR)
     alpha <- 1/(SBPRzero*exp(-(log(Steepness/0.2)/0.8)))
     beta <- log(Steepness/0.2)/(0.8*SBPRzero*Rzero)
-    Recruit <- (log(alpha) + log(SBPR*Recruit))/(beta*SBPR)
+    Recruit <- (log(alpha) + log(SBPR))/(beta*SBPR)
     print(paste("Doesn't require gamma_par parameter:", gamma_par, sep=" "))
   } else if(StockRecruitForm == "PellaTomlinson"){
-    # Recruit <- (Rzero*SBPRzero/SBPR)*((1 + (0.2 - 0.2^(gamma_par+1))/(Steepness-0.2) - SBPRzero*(0.2 - 0.2^(gamma_par+1))/(SBPR*(Steepness - 0.2)))^(1/gamma_par))
-    alpha <- 1/SBPRzero
-    beta <- (h-0.2)/(0.2 - 0.2^(gamma_par + 1))
-    Recruit <- (Rzero*SBPRzero/SBPR)*((1 + 1/beta - 1/(alpha*beta*SBPR))^(1/gamma_par))
+    print("start")
+    print(SBPRzero)
+    print(Rzero)
+    print(SBPR)
+    print(gamma_par)
+    print(Steepness)
+    Recruit <- (Rzero*SBPRzero/SBPR)*((1 + (0.2 - 0.2^(gamma_par+1))/(Steepness-0.2) - SBPRzero*(0.2 - 0.2^(gamma_par+1))/(SBPR*(Steepness - 0.2)))^(1/gamma_par))
+    # alpha <- 1/SBPRzero
+    # print(alpha)
+    # print("alpha")
+    # beta <- (Steepness-0.2)/(0.2 - 0.2^(gamma_par + 1))
+    # print(beta)
+    # print("beta")
+    # Recruit <- (Rzero*SBPRzero/SBPR)*((1 + 1/beta - 1/(alpha*beta*SBPR))^(1/gamma_par))
+    # print(Recruit)
   }
   
   return(Recruit)
@@ -229,7 +240,7 @@ CalcYield <- function(FishingMortality = 0,
       # = "Ricker"
       # = "PellaTomlinson
     
-  # Return: List containing calculated Yield with associated FishingMortality, Recruitment, SBPR, NAA, YPR, SBPRzero, and Z_mortality
+  # Return: List containing calculated Yield with associated FishingMortality, Recruitment, SBPR, NAA, YPR, SBPRzero, SSB, and Z_mortality
   
   Ages <- seq(0,length(FecundityAtAge)-1)
   
@@ -255,6 +266,10 @@ CalcYield <- function(FishingMortality = 0,
   # Calculate yield
   Yield <- YPR*Recruit
   
+  # Calculate SSB corresponding with Yield
+  SSB <- CalcSSB(FishingMortality = FishingMortality, SBPR = SBPR, Recruit = Recruit)
+  StandardSSB <- SSB/(SBPRzero*Rzero) # Standardize relative to unfished
+  
   Result <- NULL
   Result$Yield <- Yield
   Result$Recruit <- Recruit
@@ -266,6 +281,7 @@ CalcYield <- function(FishingMortality = 0,
   Result$Z_mortality <- Z_mortality
   Result$YPR <- YPR
   Result$SBPRzero <- SBPRzero
+  Result$SSB <- StandardSSB
   
   return(Result)
 }
@@ -288,6 +304,53 @@ CalcSSB <- function(FishingMortality = 0,
   return(SSB)
 }
 
+
+
+CalcFMSY <- function(F_par, StockRecruitForm = "BevertonHolt", gamma_par = 1, Steepness = NULL, Rzero = NULL){
+  # Args:
+  # F_par is fishing mortality to vary using uniroot
+  # StockRecruitForm is the stock recruit relationship
+  # gamma_par is parameter needed if StockRecruitForm = "PellaTomlinson", default = 1
+  # Steepness of stock recruit relationship
+  # Rzero = recruitment at 0 fishing
+  
+  Result1 <- CalcYield(FishingMortality = (F_par + 0.001), M_par = 0.15, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = data$Fecundity, 
+                       gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = StockRecruitForm)
+  
+  Result2 <- CalcYield(FishingMortality = (F_par - 0.001), M_par = 0.15, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = data$Fecundity, 
+                       gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = StockRecruitForm)
+  print(Result1$Yield)
+  print(Result2$Yield)
+  
+  Difference <- (Result2$Yield - Result1$Yield)/0.002
+  return(Difference)
+}
+
+# Run the following line to test function:
+# uniroot(CalcFMSY,interval=c(0,1), StockRecruitForm = "PellaTomlinson", gamma_par = 1, Steepness = 0.5, Rzero=1)
+
+
+# Calculate Fcrash (F where population crashes = where recruitment = 0)
+CalcFcrash <- function(F_par, StockRecruitForm = NULL, Steepness = NULL, Rzero = NULL, gamma_par = 1){
+  # Args:
+  # F_par is fishing mortality to vary using uniroot
+  # StockRecruitForm is the stock recruit relationship
+  # Steepness is slope of the stock-recruit relationship
+  # Rzero is recruitment under no fishing
+  # gamma_par: optional parameter passed when 
+  
+  
+  Result <- CalcYield(FishingMortality = (F_par), M_par = 0.15, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = data$Fecundity, 
+                      gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = StockRecruitForm)
+  
+  Recruit <- Result$Recruit
+  
+  return(Recruit)
+  
+}
+
+# Run the following line to test function:
+# uniroot(CalcFcrash, interval=c(0,1), StockRecruitForm = "BevertonHolt", Steepness = 0.5, Rzero = 1, gamma_par = 1)
 
 
 

@@ -8,6 +8,11 @@ data <- read.table("HOME3.TXT", header=TRUE)
 colnames(data) <- c("Age", "Fecundity", "Weight_F", "Weight_M", "Selectivity_F", "Selectivity_M")
 
 
+SelectivityAtAgeMatrix <- cbind(data$Selectivity_F, data$Selectivity_M)
+colnames(SelectivityAtAgeMatrix) <- c("Selectivity_F", "Selectivity_M")
+
+WeightAtAgeMatrix <- cbind(data$Weight_F, data$Weight_M)
+colnames(WeightAtAgeMatrix) <- c("Weight_F", "Weight_M")
 
 
 
@@ -37,7 +42,11 @@ HW3Function <- function(FishingMortality = seq(0,1, by=0.01),
     # gamma_par: number, no default
     # DoPlot: Boolean, specifies if plots are produced, default = TRUE
   
-  # Return:
+  # Return: Matrix containing StockRecruitForm, MSY, FMSY, Fcrash
+  
+  FinalResults <- matrix(NA, length(FishingMortality),10)
+  colnames(FinalResults) <- c("StockRecruitForm", "Steepness", "MSY", "FMSY", "Fcrash", "SSB0", "SSB_MSY", "FishingMortality", "SSB", "Recruitment")
+  FinalResults[,"StockRecruitForm"] <- StockRecruitForm
   
   Ages <- seq(0,length(FecundityAtAge)-1)
   
@@ -67,42 +76,34 @@ HW3Function <- function(FishingMortality = seq(0,1, by=0.01),
     Result <- CalcYield(FishingMortality = FishingMortality[ifish], M_par = M_par, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = FecundityAtAge, 
                         gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = StockRecruitForm)
     SBPR[ifish] <- Result$SBPR
-    #print(Result$Z_mortality)
     Recruit[ifish] <- Result$Recruit
-    # print(SBPR)
-    # print(SBPRzero)
-    # print(Rzero)
-    # print(Recruit)
     Yield[ifish] <- Result$Yield
     NAA <- Result$NAA
-    #print(NAA)
-    #print(Result$YPR)
-    # Calculate Spawning Stock Biomass
-    print("here")
-    print(Result$SBPR)
-    print(Result$Recruit)
-    SSB[ifish] <- CalcSSB(SBPR = Result$SBPR, Recruit = Result$Recruit, FishingMortality = FishingMortality[ifish])
-    print(SSB)
+    SSB[ifish] <- Result$SSB
   }
+  FinalResults[,"FishingMortality"] <- FishingMortality
+  FinalResults[,"SSB"] <- SSB
+  FinalResults[,"Recruitment"] <- Recruit
+  FinalResults[,"SSB0"] <- Result$SBPRzero*Rzero
+  FinalResults[,"Steepness"] <- Steepness
   
   # Calculate MSY and FMSY
   FMSY <- uniroot(CalcFMSY,interval=c(0,1), StockRecruitForm = StockRecruitForm, gamma_par = gamma_par, Steepness = Steepness, Rzero = Rzero) #, Steepness = Steepness)
   MSYResults <- CalcYield(FishingMortality = FMSY$root, M_par = M_par, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = FecundityAtAge,
                           gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = StockRecruitForm)
   MSY <- MSYResults$Yield
-  print(MSY)
-  print(max(Result$Yield))
+  FinalResults[,"MSY"] <- MSY
+  FinalResults[,"FMSY"] <- FMSY$root
+  FinalResults[,"SSB_MSY"] <- MSYResults$SBPR*MSYResults$Recruit
 
   # Calculate Fcrash
-  # Fcrash <- uniroot(CalcFcrash, interval=c(0,1), StockRecruitForm = StockRecruitForm, Steepness = Steepness, Rzero = Rzero)
-  # Fcrash <- Fcrash$root
-  print("FMSY")
-  print(FMSY$root)
-  print("MSY")
-  print(MSY)
-  # print("Fcrash")
-  # print(Fcrash)
+  Fcrash <- uniroot(CalcFcrash, interval=c(0,1), StockRecruitForm = StockRecruitForm, Steepness = 0.5, Rzero = 1, gamma_par = 1)
+  Fcrash <- Fcrash$root
+  FinalResults[,"Fcrash"] <- Fcrash
 
+  print(min(Recruit[which(Recruit >= 0)])) # This prints the minimum Recruitment greater than or equal to zero
+  print(FishingMortality[which(Recruit == min(Recruit[which(Recruit >= 0)]))]) # prints fishing mortality corresponding to min recruitment
+  print(Fcrash)
   
   if(DoPlot == TRUE){
     par(mfrow=c(2,2)) # this makes a 4X4 plot
@@ -115,97 +116,90 @@ HW3Function <- function(FishingMortality = seq(0,1, by=0.01),
     
     # Plot
     plot(x = plotSSB, y = plotRecruit, main = "Recruitment vs. SSB", xlab = "SSB", ylab = "Recruitment")
-    xreplacement <- seq(0:max(SSB))
-    yreplacement <- seq(0:max(SSB))
+    xreplacement <- seq(0,max(plotSSB))
+    yreplacement <- seq(0,max(plotSSB))
     lines(x=xreplacement, y=yreplacement)
     plot(x = plotSSB, y = plotYield, main = "Yield vs. SSB", xlab = "SSB", ylab = "Yield")
-    abline(h = MSY, col = "red")
+    abline(h = MSY, col = "blue")
     plot(x = plotFishingMortality, y = plotYield, main = "Yield vs. Fishing Mortality", xlab = "Fishing Mortality", ylab = "Yield")
     abline(v = FMSY$root, col="red")
-    # abline(v = Fcrash, col = "green")
+    abline(v = Fcrash, col = "green")
     abline(h = MSY, col = "blue")
     legend("topright", legend=c("FMSY", "MSY", "Fcrash"), fill=c("red", "blue", "green"))
-    plot(x = plotFishingMortality, y = plotSSB, main = "SSB vs. Fishing Mortality", xlab = "Fishing Mortality", ylab = "SSB")
+    plot(x = plotFishingMortality, y = plotSSB, main = "SSB vs. Fishing Mortality", xlab = "Fishing Mortality", ylab = "SSB",
+         xlim = c(0,max(plotFishingMortality)+0.1))
+    abline(v = Fcrash, col = "green")
+    legend("topright", legend=c("Fcrash"), fill=c("green"))
     mtext(StockRecruitForm, outer = TRUE, cex = 1.5, side = 3, line = -1.5)
   }
+  
+  return(FinalResults)
 }
 
 # Test with single value of F
-HW3Function(FishingMortality = 0.1, M_par = 0.15, FecundityAtAge = data$Fecundity, WeightAtAgeMatrix = WeightAtAgeMatrix,
+HW3Function(FishingMortality = c(0,0.1,0.2), M_par = 0.15, FecundityAtAge = data$Fecundity, WeightAtAgeMatrix = WeightAtAgeMatrix,
             SelectivityAtAgeMatrix = SelectivityAtAgeMatrix, Rzero = 1, Steepness = 0.5, StockRecruitForm = "BevertonHolt", 
-            gamma_par = 0.2, DoPlot = FALSE)
+            gamma_par = 1, DoPlot = TRUE)
 
 # Run across a range of F
-HW3Function(FishingMortality = seq(0,1,by=0.001), M_par = 0.2, FecundityAtAge = data$Fecundity, 
-            WeightAtAgeMatrix = WeightAtAgeMatrix, SelectivityAtAgeMatrix = SelectivityAtAgeMatrix, 
-            Rzero = 1, Steepness = 0.5, StockRecruitForm = "Ricker", gamma_par = 0.2, 
-            DoPlot = TRUE)
+Question3Results <- HW3Function(FishingMortality = c(seq(0,1,by=0.001)), M_par = 0.15, FecundityAtAge = data$Fecundity, 
+                               WeightAtAgeMatrix = WeightAtAgeMatrix, SelectivityAtAgeMatrix = SelectivityAtAgeMatrix, 
+                               Rzero = 1, Steepness = 0.5, StockRecruitForm = "BevertonHolt", gamma_par = 1, 
+                               DoPlot = TRUE)
 
 
-CalcFMSY <- function(F_par, StockRecruitForm = "BevertonHolt", gamma_par = 1, Steepness = NULL, Rzero = NULL){
-  # Args:
-  # F_par is fishing mortality to vary using uniroot
-  # StockRecruitForm is the stock recruit relationship
-  # gamma_par is parameter needed if StockRecruitForm = "PellaTomlinson", default = 1
-  # Steepness of stock recruit relationship
-  # Rzero = recruitment at 0 fishing
-  
-  Result1 <- CalcYield(FishingMortality = (F_par + 0.001), M_par = 0.15, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = data$Fecundity, 
-                       gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = StockRecruitForm)
-  
-  Result2 <- CalcYield(FishingMortality = (F_par - 0.001), M_par = 0.15, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = data$Fecundity, 
-                       gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = StockRecruitForm)
-  print(Result1$Yield)
-  print(Result2$Yield)
-  
-  Difference <- (Result2$Yield - Result1$Yield)/0.002
-  return(Difference)
-}
 
-uniroot(CalcFMSY,interval=c(0,1), StockRecruitForm = "PellaTomlinson", gamma_par = 1, Steepness = 0.5, Rzero=1)
+###########################################################################################
+##### Question 4 
+###########################################################################################
+FormList <- c("BevertonHolt", "Ricker", "PellaTomlinson")
+SteepnessList <- seq(0.25, 0.95, by = 0.05)
 
-#!!!!!!!!!!!! this doesn't work for Ricker or BevertonHolt
-CalcFcrash <- function(F_par, StockRecruitForm = "BevertonHolt", Steepness = NULL, Rzero = NULL, gamma_par = 1){
-  # Args:
-  # F_par is fishing mortality to vary using uniroot
-  # StockRecruitForm is the stock recruit relationship
-  # Steepness is slope of the stock-recruit relationship
-  # Rzero is recruitment under no fishing
-  # gamma_par: optional parameter passed when 
-  
-  if(StockRecruitForm == "BevertonHolt"){ # This works
-    Result <- CalcYield(FishingMortality = (F_par), M_par = 0.15, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = data$Fecundity, 
-                        gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = "BevertonHolt")
-    alpha <- Result$SBPRzero*(0.2-0.2*Steepness)/(0.8*Steepness)
+for(iform in FormList){
+  FormResult <- NULL
+  plotTable <- matrix(NA, length(SteepnessList), 2)
+  colnames(plotTable) <- c("Steepness", "SSBratio")
+  par(mfrow=c(1,4))
+  for(isteep in 1:length(SteepnessList)){
+    TempResult <- HW3Function(FishingMortality = c(seq(0,1,by=0.001)), M_par = 0.15, FecundityAtAge = data$Fecundity, 
+                              WeightAtAgeMatrix = WeightAtAgeMatrix, SelectivityAtAgeMatrix = SelectivityAtAgeMatrix, 
+                              Rzero = 1, Steepness = SteepnessList[isteep], StockRecruitForm = iform, gamma_par = 1, 
+                              DoPlot = FALSE)
+    TempResult <- as.data.frame(TempResult)
+    SSBzeroRatio <- as.numeric(as.character(TempResult$SSB_MSY))/as.numeric(as.character((TempResult$SSB0)))
+    TempResult <- cbind(TempResult, SSBzeroRatio)
+    plotTable[isteep, "Steepness"] <- as.numeric(as.character(unique(TempResult$Steepness)))
+    plotTable[isteep, "SSBratio"] <- as.numeric(as.character(unique(TempResult$SSBzeroRatio)))
     
-    print(Result$SBPR)
-    print(alpha)
-    
-    Difference <- Result$SBPR - alpha
-  } else if (StockRecruitForm == "Ricker"){ # this is set up such that calculating at F=1 and F=0 are both negative differences so there is no zero between them, rethink this
-    Result <- CalcYield(FishingMortality = (F_par), M_par = 0.15, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = data$Fecundity, 
-                        gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = "Ricker")
-    alpha <- Rzero/(Result$SBPRzero*exp(-(log(Steepness/0.2)/0.8)))
-    
-    print(Result$SBPR)
-    print(alpha)
-    
-    Difference <- Result$SBPR - alpha
-  } else if (StockRecruitForm == "PellaTomlinson"){
-    Result <- CalcYield(FishingMortality = (F_par), M_par = 0.15, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = data$Fecundity, 
-                        gamma_par = gamma_par, Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = "Ricker")
-    alpha <- 1/Result$SBPRzero
-    
-    print(Result$SBPR)
-    print(alpha)
-    
-    Difference <- Result$SBPR - alpha
+    FormResult <- rbind(FormResult, TempResult)
   }
+  # Plot Functional Form
+  plot(0,0,xlim = c(0,1),ylim = c(0,1),type = "n")
+  color <- rainbow(length(SteepnessList))
+  for(isteep in 1:length(SteepnessList)){
+    tempy <- as.numeric(as.character(FormResult[which(FormResult[,"Steepness"]==SteepnessList[isteep]),"Recruitment"]))
+    tempy <- tempy[which(tempy >=0)]
+    tempx <- as.numeric(as.character(FormResult[which(FormResult[,"Steepness"]==SteepnessList[isteep]),"SSB"]))
+    tempx <- tempx[which(tempy >=0)]
+    
+    lines(x=tempx, y=tempy, col = color[isteep])
+    lines(x = tempx, y = tempy, col = color[isteep])
+  }
+  # legend("bottomright",legend = SteepnessList, fill = color)
   
-  return(Difference)
+  # Plot SSB_MSY/SSB0 ratio information
+  colnames(plotTable) <- c("Steepness", "S(Fmsy)/S(0)")
+  plotTable[,"S(Fmsy)/S(0)"] <- round(plotTable[,"S(Fmsy)/S(0)"],4)
+  
+  library(gridExtra)
+  library(grid)
+  theme1 <- ttheme_minimal(core=list(bg_params = list(fill = c(color, rep("white", length(SteepnessList))), col=NA), fg_params=list(fontface=3)),
+                           colhead=list(fg_params=list(col="black", fontface=4L)))
+  plot(1,1,type="n", axes=FALSE, ann=FALSE)
+  grid.table(plotTable, theme = theme1) # need to work on this grid since it isn't in the right place
+
 }
 
-uniroot(CalcFcrash, interval=c(0,1), StockRecruitForm = "BevertonHolt", Steepness = 0.5, Rzero = 1, gamma_par = 1)
 
 
 
@@ -217,65 +211,5 @@ uniroot(CalcFcrash, interval=c(0,1), StockRecruitForm = "BevertonHolt", Steepnes
 
 
 
-
-# max yield 0.02662691 as calculated
-
-
-# Test CalcYield Equation
-ResultTest <- CalcYield(FishingMortality = 0.5, M_par = M_par, SelectivityAtAge = SelectivityAtAgeMatrix, WeightAtAge = WeightAtAgeMatrix, FecundityAtAge = FecundityAtAge, 
-                        Ages = Ages, Steepness = Steepness, Rzero = Rzero, StockRecruitForm = "BevertonHolt")
-
-
-SelectivityAtAgeMatrix <- cbind(data$Selectivity_F, data$Selectivity_M)
-colnames(SelectivityAtAgeMatrix) <- c("Selectivity_F", "Selectivity_M")
-
-WeightAtAgeMatrix <- cbind(data$Weight_F, data$Weight_M)
-colnames(WeightAtAgeMatrix) <- c("Weight_F", "Weight_M")
-
-
-# Test
-M_par <- 0.15
-Steepness  <- 0.5
-Rzero <- 1
-
-
-
-
-
-
-# CalcMSY <- function(i){
-#   # Args: FishingMortality = FishingMortality, Yield = Yield
-#     # FishingMortality: Vector of fishing mortalities to assess
-#     # Yield: Vector of yields across FishingMortalities 
-#   
-#   # Returns: MSY value where derivative of yield is zero
-#   
-#   h_interval <- FishingMortality[2] - FishingMortality[1]
-#   #for(i in 1:length(FishingMortality)-1){
-#     YieldDeriv <- (Yield[i+1] - Yield[i])/(2*h_interval)
-#   #}
-# }
-
-
-
-
-
-
-
-# # Storage vectors
-# Recruits <- rep(NA, length(FishingMortality))
-# Yield <- rep(NA, length(FishingMortality))
-# YPR <- rep(NA, length(FishingMortality)) # yield per recruit
-# # Z_mortality <- rep(NA, length(FishingMortality)) # total mortality matrix, iage rows, ifish = columns
-# # NAA # Abundance at age, iage = rows, ifish = columns
-# 
-# # Need to Calculate
-# SBPR # 1 valueper F value (length = length(FishingMortality))
-# SBPRzero # SBPR at zero fishing
-# 
-# # If statements to calculate R, SSB, Yield
-# for(ifish in 1:length(FishingMortality)){
-#   
-# }
 
 
