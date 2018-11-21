@@ -25,6 +25,7 @@ template<class Type>
   // DATA_VECTOR(data_object_name); // Vector of data
   
   
+  
   ///// Parameter section /////
     PARAMETER(dummy); // Include dummy variable to debug code without full estimation of likelihood
     PARAMETER(Bzero); // Bzero = K = biomass at equilibrium
