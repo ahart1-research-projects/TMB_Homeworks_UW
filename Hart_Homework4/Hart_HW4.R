@@ -89,10 +89,28 @@ recruitment
 # catch_obs
 # Catch_vals
 
+plot(y=catch_pred, x = Catch_yr, main = "Catch Timeseries", xlab = "Year", ylab="Catch", type="l")
+points(y=catch_pred, x=Catch_yr, col="blue")
+
+plot(y=Survey_vals, x = Survey_yr, main = "Biomass Timeseries", xlab = "Year", ylab="Biomass", col="blue")
+lines(y=biomass_pred,x=Catch_yr, col="black")
 
 ################################ MCMC ###############################
 library(tmbstan)
 
+# Set Nproj = 10 so projection included in MCMC
+ModelData <- list(survey_vals = Survey_vals, survey_yr = Survey_yr, survey_SE = Survey_SE, 
+                  catch_obs = Catch_vals, catch_yr = Catch_yr, rho = rho_val, w_dat = w_val, 
+                  M_dat = M_val, Nproj = 10, catch_proj = 1000)
+
+# Use map function to specify which parameters to estimate, those that are not estimated are fixed at initial values and must have a factor(NA) in map list
+ModelMap <- list(dummy = factor(NA)) # rep(factor(NA),5) for a parameter vector of length 5
+
+# Construct objective function to optimize based on data, parameters, and Cpp code
+Model <- MakeADFun(data = ModelData, parameters = ModelParameters, DLL="Hart_HW4_Deriso",silent=T,map = ModelMap) # silent=T silences a bunch of extra print statements
+
+
+# Make Parameter list
 numParamList <- 1
 
 make_init <- function(chainID = 1){
@@ -104,20 +122,21 @@ ParamList <- lapply(1:numParamList, function(id) make_init(chainID = id)) # func
 
 
 MCMC_Deriso <- tmbstan(obj = Model,
-                         iter = 20000, # 2000 iterations
+                         iter = 30000, # 2000 iterations
                          init = ParamList, # "par" uses defaults from model object, alternatively use "last.par.best"
                          chains = length(ParamList),
-                         warmup = 2000,
-                         thin = 10,
+                         warmup = 3000,
+                         thin = 100,
                          lower = lowbnd,
-                         upper = uppbnd)
+                         upper = uppbnd, 
+                       seed = 1)
 
 print(MCMC_Deriso)
   # summary(MCMC_Deriso)
   # plot(MCMC_Deriso)
-  # traceplot(MCMC_Deriso, pars=names(Model$par))
+traceplot(MCMC_Deriso, pars=names(Model$par))
   # stan_plot(MCMC_Deriso, pars=names(Model$par)) # hard to look at with scale difference
-stan_trace(MCMC_Deriso, pars=names(Model$par)) # breaks it down by parameter =)
+stan_trace(MCMC_Deriso, pars=names(Model$par)) # breaks it down by parameter =), use for diagnostics
 # stan_hist(MCMC_Deriso, pars=names(Model$par)) # similar to below but with bar plots
 stan_dens(MCMC_Deriso, pars=names(Model$par)) # This is the best thing ever (as far as plots go, the distributions are wrong)
 stan_scat(MCMC_Deriso, pars=c("Bzero", "h_steep")) # Don't know why you would do this but you can plot 2 against eachother
@@ -125,7 +144,7 @@ stan_diag(MCMC_Deriso) # requires more than 1 chain, what is this?
 # stan_rhat(MCMC_Deriso, pars=names(Model$par)) # ick
 stan_ess(MCMC_Deriso, pars=names(Model$par)) # plot effective sample size
 stan_mcse(MCMC_Deriso, pars=names(Model$par))
-# stan_ac(MCMC_Deriso, pars=names(Model$par)) # ick
+stan_ac(MCMC_Deriso, pars=names(Model$par)) # use for diagnostics
 
 # pairs(MCMC_Deriso)
  
@@ -146,8 +165,8 @@ MCMC_logFy <- extract(MCMC_Deriso)$logF_y
 ########################### Part C with projections ##################################################
 ######################################################################################################
 # Compile Cpp code
-compile("Hart_HW4_Deriso.cpp") # file must be in working directory or provide full file path name
-dyn.load(dynlib("Hart_HW4_Deriso"))
+## compile("Hart_HW4_Deriso.cpp") # file must be in working directory or provide full file path name
+## dyn.load(dynlib("Hart_HW4_Deriso"))
 
 CheckTargetB <- function(catch_proj = 1000, Nproj = 1){
   # Note that only catch_proj is passed in as a parameter, all other data required to fit model is assumed to be global (i.e. you run the data lines at the start of this script)
@@ -216,14 +235,16 @@ Result_projCatch_10yr <- uniroot(CheckTargetB, interval= c(0, 2000), Nproj = 10)
 #####################################################################################################################################
 # !!!!!!!!!! this next bit shoud take the MCMC param values and then do & save the biomass projections for plotting
 Nproj <- 10
-catch_proj <= Result_projCatch_10yr$root
+catch_proj <- 0
+#catch_proj = Result_projCatch_10yr$root
+
 
 # set up storage for biomass vectors
 BiomassResults <- matrix(NA,nrow=length(MCMC_Bzero),ncol=length(Catch_yr)+Nproj) # Matrix with rows for MCMC calls, and columns = to number of years
 
 ModelData <- list(survey_vals = Survey_vals, survey_yr = Survey_yr, survey_SE = Survey_SE, 
                   catch_obs = Catch_vals, catch_yr = Catch_yr, rho = rho_val, w_dat = w_val, 
-                  M_dat = M_val, Nproj = 0, catch_proj = 1000)
+                  M_dat = M_val, Nproj = Nproj, catch_proj = catch_proj)
 
 for(imcmc in 1:length(MCMC_Bzero)){
   # Construct objective function to optimize based on data, parameters, and Cpp code
@@ -266,11 +287,11 @@ lines(Years,quant[3,],lwd=3,lty=3)
 
 ##### Compare distributions of B_y/Bzero over time #######################
 # first proj year
-hist(StandardizedBiomass[,31], main="Histogram of B_y/K in first projection year (2002)",
+hist(StandardizedBiomass[,31], main="Deriso Histogram of B_y/K in first projection year (2002)",
      xlab = "B_y/K")
 
 # last proj year
-hist(StandardizedBiomass[,ncol(StandardizedBiomass)], main="Histogram of B_y/K in last projection year (2012)",
+hist(StandardizedBiomass[,ncol(StandardizedBiomass)], main="Deriso Histogram of B_y/K in last projection year (2012)",
      xlab = "B_y/K")
 
 

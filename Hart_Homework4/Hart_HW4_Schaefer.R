@@ -75,12 +75,30 @@ biomass_pred
 catch_pred <- Model$report()$catch_pred
 catch_pred
 
+plot(y=catch_pred, x = Catch_yr, main = "Schaefer Catch Timeseries", xlab = "Year", ylab="Catch", type="l")
+points(y=catch_pred, x=Catch_yr, col="blue")
+
+plot(y=Survey_vals, x = Survey_yr, main = "Schaefer Biomass Timeseries", xlab = "Year", ylab="Biomass", col="blue")
+lines(y=biomass_pred,x=Catch_yr, col="black")
+
 ####################################################################################################################################
 ###### Do MCMC 
 ####################################################################################################################################
+# Create list of data objects, names of list items must match DATA objects in Cpp code
+ModelData <- list(survey_vals = Survey_vals, survey_yr = Survey_yr, survey_SE = Survey_SE, 
+                  catch_obs = Catch_vals, catch_yr = Catch_yr, Nproj = 10, catch_proj = 100)
+
+# Use map function to specify which parameters to estimate, those that are not estimated are fixed at initial values and must have a factor(NA) in map list
+ModelMap <- list(dummy = factor(NA)) # rep(factor(NA),5) for a parameter vector of length 5
+
+# Construct objective function to optimize based on data, parameters, and Cpp code
+Model <- MakeADFun(data = ModelData, parameters = ModelParameters, DLL="Hart_HW4_Schaefer",silent=T,map = ModelMap) # silent=T silences a bunch of extra print statements
+
+
+
 library(tmbstan)
 
-numParamList <- 3
+numParamList <- 1
 
 make_init <- function(chainID = 1){
   list(dummy=0, Bzero=runif(1, 500, 1500), logr_growth = runif(1, -10, 0), logF_y = rep(runif(1, -20, -0.01), length(Catch[,"Year"])-1)) 
@@ -91,10 +109,10 @@ ParamList <- lapply(1:numParamList, function(id) make_init(chainID = id)) # func
 
 
 MCMC_Schaefer <- tmbstan(obj = Model,
-                       iter = 20000, # 2000 iterations
+                       iter = 30000, # 2000 iterations
                        init = ParamList, # "par" uses defaults from model object, alternatively use "last.par.best"
                        chains = length(ParamList),
-                       warmup = 2000,
+                       warmup = 3000,
                        thin = 100,
                        lower = lowbnd,
                        upper = uppbnd)
@@ -115,10 +133,10 @@ stan_trace(MCMC_Schaefer, pars=names(Model$par)) # breaks it down by parameter =
 stan_dens(MCMC_Schaefer, pars=names(Model$par)) # This is the best thing ever (as far as plots go, the distributions are wrong)
 stan_scat(MCMC_Schaefer, pars=c("Bzero", "r_growth")) # Don't know why you would do this but you can plot 2 against eachother
 stan_diag(MCMC_Schaefer) # requires more than 1 chain, what is this?
-# stan_rhat(MCMC_Deriso, pars=names(Model$par)) # ick
-stan_ess(MCMC_Deriso, pars=names(Model$par)) # plot effective sample size
-stan_mcse(MCMC_Deriso, pars=names(Model$par))
-# stan_ac(MCMC_Deriso, pars=names(Model$par)) # ick
+# stan_rhat(MCMC_Schaefer, pars=names(Model$par)) # ick
+stan_ess(MCMC_Schaefer, pars=names(Model$par)) # plot effective sample size
+stan_mcse(MCMC_Schaefer, pars=names(Model$par))
+stan_ac(MCMC_Schaefer, pars=names(Model$par)) # use for diagnostics
 
 # # To resolve this error:
 # Error in .Call("is_Null_NS", ns) : 
@@ -197,7 +215,7 @@ Result_projCatch_10yr <- uniroot(CheckTargetB, interval= c(0, 2000), Nproj = 10)
 #####################################################################################################################################
 # !!!!!!!!!! this next bit shoud take the MCMC param values and then do & save the biomass projections for plotting
 Nproj <- 10
-catch_proj <= Result_projCatch_10yr$root
+catch_proj <- Result_projCatch_10yr$root
 
 # set up storage for biomass vectors
 BiomassResults <- matrix(NA,nrow=length(MCMC_Bzero),ncol=length(Catch_yr)+Nproj) # Matrix with rows for MCMC calls, and columns = to number of years
@@ -246,9 +264,9 @@ lines(Years,quant[3,],lwd=3,lty=3)
 
 ##### Compare distributions of B_y/Bzero over time #######################
 # first proj year
-hist(StandardizedBiomass[,31], main="Histogram of B_y/K in first projection year (2002)",
+hist(StandardizedBiomass[,31], main="Schaefer Histogram of B_y/K in first projection year (2002)",
      xlab = "B_y/K")
 
 # last proj year
-hist(StandardizedBiomass[,ncol(StandardizedBiomass)], main="Histogram of B_y/K in last projection year (2012)",
+hist(StandardizedBiomass[,ncol(StandardizedBiomass)], main="Schaefer Histogram of B_y/K in last projection year (2012)",
      xlab = "B_y/K")

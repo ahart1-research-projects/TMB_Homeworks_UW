@@ -21,47 +21,23 @@ template<class Type>
   DATA_SCALAR(M_dat); // Natural mortality rate
   DATA_INTEGER(Nproj); // Number of projection years to run, set to 0 if you don't want projections, if Nproj > 0, you need to estimate logF_proj
   DATA_SCALAR(catch_proj); // Log F used in projection period, set to if Nproj = 0 this will not be used
-  //DATA_INTEGER(data1); 
-  //DATA_IVECTOR(data2); // Vector of integers ??
-  // DATA_VECTOR(data_object_name); // Vector of data
-  
-  
   
   ///// Parameter section /////
     PARAMETER(dummy); // Include dummy variable to debug code without full estimation of likelihood
     PARAMETER(Bzero); // Bzero = K = biomass at equilibrium
     PARAMETER(h_steep); // Steepness parameter
     PARAMETER_VECTOR(logF_y); // Vector of fishing mortalities for years 2 on (1972 - 2000, the years for which catch > 0), length of 29
-  // Retransform variables so not in log space 
-  // Type local_variable1 = exp(log_variable1); 
   
   // Local variables
-     //Type local_variable2; // single value variable which is NOT an integer
-      //local_variable2 = 5; 
-  
-      //vector<Type> local_vector(5); // vector of length 5
-      //matrix<Type> local_matrix(3,4); // 3X4col matrix
+
   vector<Type> biomass(catch_obs.size()+Nproj); // Biomass storage vector
   vector<Type> recruitment(catch_obs.size()+Nproj); // Recruitment storage vector
   vector<Type> catch_pred(catch_obs.size()+Nproj); // Catch observation storage vector
-//  vector<Type> biomass(catch_obs.size()); // Biomass storage vector
-//  vector<Type> recruitment(catch_obs.size()); // Recruitment storage vector
-//  vector<Type> catch_pred(catch_obs.size()); // Catch observation storage vector
   Type Rzero = 0; // Initial value for Rzero
   Type temp_logith = 0; 
   
   Type obj_fun = 0; // NegativeLogLikelihood initialized at zero
-  
-  
-  ///// Calculate parameters (could also do in R and pass in as DATA) /////
-    
-  
-  ///// Code which contributes to objective function /////
-    // Generally make a prediction and compare that prediction to data (likelihood)
-  // minimize comparison so you pick parameter values to best predict data
-  // obj_fun += likelihood_component1 + likelihood_component2...
-  //obj_fun += dummy*dummy; // dummy objective function used to debug (make sure code compiles) without estimating all parameters
-  
+
   // Equilibrium starting conditions
   Rzero = (Bzero - (1.0 + rho)*exp(-1.0*M_dat)*Bzero + rho*exp(-2.0*M_dat)*Bzero)/(1.0 - rho*w_dat*exp(-1.0*M_dat)); // !!!! check to make sure this isn't zero, initialized at 0 but this line isn't being calculated
   //recruitment(iyear) = Rzero;
@@ -131,13 +107,6 @@ template<class Type>
     } 
  
   }
-  
-  
-  
-  
-  
-  
-  
   
   ///// Prior likelihood components /////
   // logit h (steepness)
