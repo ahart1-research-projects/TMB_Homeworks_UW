@@ -16,6 +16,8 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(survey_SE); // Survey SE
   DATA_VECTOR(catch_obs); // Catch numbers, shorter than biomass, recruitment, and catch_pred (added 1 year to start of these timeseries) so offset by 2 in equations (for indexing reasons) rather than 1 observed in normal equation form (in reality refer to catches offset by 1 year)
   DATA_VECTOR(catch_yr); // Catch years
+  DATA_INTEGER(Nproj); // Number of projection years to run, set to 0 if you don't want projections, if Nproj > 0, you need to estimate logF_proj
+  DATA_SCALAR(catch_proj); // Log F used in projection period, set to if Nproj = 0 this will not be used
   
   
   //DATA_INTEGER(data1); 
@@ -38,9 +40,9 @@ Type objective_function<Type>::operator() ()
   
   //vector<Type> local_vector(5); // vector of length 5
   //matrix<Type> local_matrix(3,4); // 3X4col matrix
-  vector<Type> biomass(catch_obs.size()); // Biomass storage vector
+  vector<Type> biomass(catch_obs.size()+Nproj); // Biomass storage vector
   //vector<Type> recruitment(catch_obs.size()); // Recruitment storage vector
-  vector<Type> catch_pred(catch_obs.size()); // Catch observation storage vector
+  vector<Type> catch_pred(catch_obs.size()+Nproj); // Catch observation storage vector
   Type rNLL = 0; // Initial value for Rzero
   Type BzeroNLL = 0; 
   
@@ -64,7 +66,7 @@ Type objective_function<Type>::operator() ()
   
   // catch_obs in biomass equatio should be catch_pred
   
-  for(int iyear=0; iyear<catch_obs.size()-1; iyear++){
+  for(int iyear=0; iyear<catch_obs.size()-1+Nproj; iyear++){
     if (iyear == 0){ 
       // 1970
       biomass(iyear) = Bzero; 
@@ -72,31 +74,39 @@ Type objective_function<Type>::operator() ()
       // project 1971
       biomass(iyear+1) = biomass(iyear) + r_growth*biomass(iyear)*(1.0 - (biomass(iyear)/Bzero)) - 0; 
       catch_pred(iyear+1) = exp(logF_y(iyear))*biomass(iyear+1);
+    } else if (iyear >= catch_obs.size()-1){ // If you enter the projection period
+      biomass(iyear+1) = biomass(iyear) + r_growth*biomass(iyear)*(1.0 - (biomass(iyear)/Bzero)) - catch_pred(iyear); 
+      catch_pred(iyear+1) = catch_proj;
     } else { // project 1972 - 2000
       biomass(iyear+1) = biomass(iyear) + r_growth*biomass(iyear)*(1.0 - (biomass(iyear)/Bzero)) - catch_pred(iyear); 
       catch_pred(iyear+1) = exp(logF_y(iyear))*biomass(iyear+1);
     } 
     
-    // Catch likelihood component
-    Type Catchdiff = 0;
-    Catchdiff = catch_obs(iyear) - catch_pred(iyear);
-    obj_fun -= dnorm(Catchdiff, Type(0), Type(0.2), TRUE); // TRUE means log, - so NLL 
-    // obj_fun -= dnorm(catch_pred(iyear), catch_obs(iyear), Type(0.2));
-    
-    if(iyear == catch_obs.size()-2){ // if last year
-      // Catch likelihood component
+    // If you are not in the projection period 
+    if(iyear < catch_obs.size()-1){ 
+      //// Catch likelihood component
       Type Catchdiff = 0;
-      Catchdiff = catch_obs(iyear+1) - catch_pred(iyear+1);
-      obj_fun -= dnorm(Catchdiff, Type(0), Type(0.2), TRUE); // TRUE means log, - so NLL 
-      //obj_fun -= dnorm(catch_pred(iyear+1), catch_obs(iyear+1), Type(0.2));
-    }
-    
-    // Biomass likelihood component
-    Type Biodiff = 0;
-    for (int isurvey=0; isurvey<survey_yr.size(); isurvey++){
-      if(catch_yr(iyear) == survey_yr(isurvey)){
-        Biodiff = survey_vals(isurvey) - biomass(iyear);
-        obj_fun -= dnorm(Biodiff, Type(0), survey_SE(isurvey), TRUE); // second number is mean, maybe this shouldn't be zero??????????/
+      Catchdiff = catch_obs(iyear) - catch_pred(iyear);
+      obj_fun -= dnorm(Catchdiff, Type(0), Type(0.2), TRUE); // TRUE means log, - so NLL
+      // if last year (non-projection)
+      if(iyear == catch_obs.size()-2){ 
+        // Catch likelihood component
+        // obj_fun += dnorm(catch_pred(iyear), catch_obs(iyear), Type (0.2)); // Want predicted catch to be very well fit to observed
+        Type Catchdiff = 0;
+        Catchdiff = catch_obs(iyear+1) - catch_pred(iyear+1);
+        obj_fun -= dnorm(Catchdiff, Type(0), Type(0.2), TRUE); // TRUE means log, - so NLL
+      }
+      //// Biomass likelihood component
+      Type Biodiff = 0;
+      for (int isurvey=0; isurvey<survey_yr.size(); isurvey++){
+        if(catch_yr(iyear) == survey_yr(isurvey)){
+          Biodiff = survey_vals(isurvey) - biomass(iyear);
+          obj_fun -= dnorm(Biodiff, Type(0), survey_SE(isurvey), TRUE); // second number is mean, maybe this shouldn't be zero??????????/
+        }
+        if(iyear == catch_obs.size()-2 && catch_yr(iyear+1) == survey_yr(isurvey)){ // if you are in the last year and the projected year matches a survey year
+          Biodiff = survey_vals(isurvey) - biomass(iyear+1); // compare to projected biomass
+          obj_fun -= dnorm(Biodiff, Type(0), survey_SE(isurvey), TRUE); // second number is mean, maybe this shouldn't be zero??????????/
+        } // This last part of the likelihood was super wrong for a long time, pay attention to end year conditions
       }
     } 
     
